@@ -1,3 +1,20 @@
+export interface CartItemVariant {
+  variantId: string;
+  variantName: string;
+  valueId: string;
+  valueName: string;
+}
+
+export interface CartItem {
+  id: string;
+  productId: string;
+  title: string;
+  price: number;
+  quantity: number;
+  image: string;
+  variants: CartItemVariant[];
+}
+
 export interface ProductVariant {
   id: string;
   name: string;

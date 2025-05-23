@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Product, ProductVariant, Address } from '../types/product';
+import { Product, Address, CartItem } from '../types/product';
+import { FiShoppingCart, FiX, FiPlus, FiMinus } from 'react-icons/fi';
+
+// Criando componentes de ícone com tipagem correta
+const CartIcon = () => <FiShoppingCart style={{ width: 24, height: 24 }} />;
+const CloseIcon = () => <FiX style={{ width: 24, height: 24 }} />;
+const PlusIcon = () => <FiPlus style={{ width: 16, height: 16 }} />;
+const MinusIcon = () => <FiMinus style={{ width: 16, height: 16 }} />;
 
 // Function to get image URL with fallback to placeholder
 const getImageUrl = (color: string, width = 600, height = 400) => {
@@ -82,6 +89,13 @@ const ProductPage: React.FC = () => {
   const [address, setAddress] = useState<Address | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const savedCart = localStorage.getItem('cart');
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
+  const [showCart, setShowCart] = useState<boolean>(false);
+  const [showNotification, setShowNotification] = useState<boolean>(false);
+  const [notificationMessage, setNotificationMessage] = useState<string>('');
 
   // Load saved state from localStorage on component mount
   useEffect(() => {
@@ -122,6 +136,11 @@ const ProductPage: React.FC = () => {
       localStorage.removeItem('productPageState');
     }
   }, []);
+
+  // Save cart to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
@@ -198,7 +217,96 @@ const ProductPage: React.FC = () => {
     return value ? value.available : false;
   };
 
+  const addToCart = () => {
+    // Verificar se todas as variantes necessárias foram selecionadas
+    const missingVariants = product.variants.filter(
+      variant => !selectedVariants[variant.id]
+    );
+
+    if (missingVariants.length > 0) {
+      setNotificationMessage(`Por favor, selecione ${missingVariants.map(v => v.name).join(' e ')}`);
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
+      return;
+    }
+
+    // Criar o item do carrinho
+    const cartItem: CartItem = {
+      id: `${product.id}-${Object.values(selectedVariants).join('-')}`,
+      productId: product.id,
+      title: product.title,
+      price: product.price,
+      quantity: 1,
+      image: selectedImage || product.images[0]?.url || '',
+      variants: Object.entries(selectedVariants).map(([variantId, valueId]) => {
+        const variant = product.variants.find(v => v.id === variantId);
+        const value = variant?.values.find(v => v.id === valueId);
+        return {
+          variantId,
+          variantName: variant?.name || '',
+          valueId,
+          valueName: value?.name || ''
+        };
+      })
+    };
+
+    // Verificar se o item já está no carrinho
+    const existingItemIndex = cart.findIndex(item => 
+      item.id === cartItem.id
+    );
+
+    if (existingItemIndex >= 0) {
+      // Se o item já existe, incrementar a quantidade
+      const updatedCart = [...cart];
+      updatedCart[existingItemIndex].quantity += 1;
+      setCart(updatedCart);
+    } else {
+      // Se não existe, adicionar novo item
+      setCart([...cart, cartItem]);
+    }
+
+    // Mostrar notificação
+    setNotificationMessage('Produto adicionado ao carrinho!');
+    setShowNotification(true);
+    setTimeout(() => setShowNotification(false), 3000);
+  };
+
+  const updateQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity < 1) return;
+    
+    setCart(cart.map(item => 
+      item.id === itemId ? { ...item, quantity: newQuantity } : item
+    ));
+  };
+
+  const removeFromCart = (itemId: string) => {
+    setCart(cart.filter(item => item.id !== itemId));
+  };
+
+  const getTotalItems = () => {
+    return cart.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  const getTotalPrice = (): number => {
+    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+  };
+
+  // Adicionando estilos CSS inline para a animação
+  const animationStyles = `
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(10px); }
+      10% { opacity: 1; transform: translateY(0); }
+      90% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-10px); }
+    }
+    .animate-fade-in-out {
+      animation: fadeInOut 3s ease-in-out forwards;
+    }
+  `;
+
   return (
+    <>
+      <style>{animationStyles}</style>
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <div className="md:flex">
@@ -329,13 +437,128 @@ const ProductPage: React.FC = () => {
             </div>
 
             {/* Add to Cart Button */}
-            <button className="btn-primary mt-8">
+            <button 
+              className="btn-primary mt-8 w-full py-3 text-lg font-medium"
+              onClick={addToCart}
+            >
               Adicionar ao Carrinho
             </button>
+            
+            {/* Botão do carrinho flutuante */}
+            <button 
+              onClick={() => setShowCart(true)}
+              className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors z-50 flex items-center justify-center"
+              aria-label="Ver carrinho"
+            >
+              <CartIcon />
+              {cart.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center">
+                  {getTotalItems()}
+                </span>
+              )}
+            </button>
+            
+            {/* Notificação */}
+            {showNotification && (
+              <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center z-50 animate-fade-in-out">
+                <span>{notificationMessage}</span>
+              </div>
+            )}
+            
+            {/* Carrinho flutuante */}
+            {showCart && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+                <div className="bg-white w-full max-w-md h-full overflow-y-auto">
+                  <div className="p-4 border-b flex justify-between items-center">
+                    <h2 className="text-xl font-bold">Meu Carrinho</h2>
+                    <button 
+                      onClick={() => setShowCart(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                  
+                  {cart.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">
+                      <p>Seu carrinho está vazio</p>
+                      <button 
+                        onClick={() => setShowCart(false)}
+                        className="mt-4 text-blue-600 hover:underline"
+                      >
+                        Continuar comprando
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="divide-y">
+                        {cart.map(item => (
+                          <div key={item.id} className="p-4 border-b">
+                            <div className="flex">
+                              <img 
+                                src={item.image} 
+                                alt={item.title} 
+                                className="w-20 h-20 object-cover rounded"
+                              />
+                              <div className="ml-4 flex-1">
+                                <h3 className="font-medium">{item.title}</h3>
+                                {item.variants.map((v, i) => (
+                                  <p key={i} className="text-sm text-gray-500">
+                                    {v.variantName}: {v.valueName}
+                                  </p>
+                                ))}
+                                <div className="flex items-center mt-2">
+                                  <button 
+                                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                  >
+                                    <MinusIcon />
+                                  </button>
+                                  <span className="mx-2">{item.quantity}</span>
+                                  <button 
+                                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                  >
+                                    <PlusIcon />
+                                  </button>
+                                  <button 
+                                    onClick={() => removeFromCart(item.id)}
+                                    className="ml-auto text-red-500 hover:text-red-700 text-sm"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                                <p className="text-right font-medium mt-1">
+                                  {formatPrice(item.price * item.quantity)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div className="p-4 border-t">
+                        <div className="flex justify-between text-lg font-bold mb-4">
+                          <span>Total:</span>
+                          <span>{formatPrice(getTotalPrice())}</span>
+                        </div>
+                        <button 
+                          className="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                          onClick={() => alert('Finalizar compra')}
+                        >
+                          Finalizar Compra
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
+    </>
   );
 };
 
